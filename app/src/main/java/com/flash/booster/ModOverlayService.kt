@@ -2,6 +2,7 @@ package com.flash.booster
 
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.graphics.Color
@@ -49,6 +50,11 @@ class ModOverlayService : Service() {
         startId: Int
     ): Int {
         if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(
+                this,
+                "Pehle floating permission ON karo",
+                Toast.LENGTH_LONG
+            ).show()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -58,7 +64,8 @@ class ModOverlayService : Service() {
             if (panel == null) showPanel()
         } catch (e: Exception) {
             Toast.makeText(
-                this, "Panel error: ${e.message}",
+                this,
+                "Panel error: ${e.message}",
                 Toast.LENGTH_LONG
             ).show()
             stopSelf()
@@ -140,7 +147,8 @@ class ModOverlayService : Service() {
         panel?.let {
             try {
                 wm.removeView(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         panel = null
 
@@ -163,7 +171,6 @@ class ModOverlayService : Service() {
 
             p.width = dp(54)
             p.height = dp(54)
-
             panel = bubble
             wm.addView(bubble, p)
             return
@@ -190,11 +197,7 @@ class ModOverlayService : Service() {
         content.addView(title)
         makeDraggable(title)
 
-        addButton(
-            content,
-            "⇤ SIDE HIDE",
-            cyan
-        ) {
+        addButton(content, "⇤ SIDE HIDE", cyan) {
             collapsed = true
             renderPanel()
         }
@@ -232,7 +235,7 @@ class ModOverlayService : Service() {
         }
 
         p.width = dp(if (compact) 230 else 290)
-        p.height = dp(430)
+        p.height = dp(if (compact) 360 else 500)
 
         panel = scroll
         wm.addView(scroll, p)
@@ -263,8 +266,8 @@ class ModOverlayService : Service() {
 
                         try {
                             wm.updateViewLayout(panel, p)
-                        } catch (_: Exception) {}
-
+                        } catch (_: Exception) {
+                        }
                         return true
                     }
 
@@ -352,7 +355,8 @@ class ModOverlayService : Service() {
             )
         } catch (_: Exception) {
             Toast.makeText(
-                this, "Settings open nahi ho sakin",
+                this,
+                "Settings open nahi ho sakin",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -362,7 +366,8 @@ class ModOverlayService : Service() {
         panel?.let {
             try {
                 wm.removeView(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         panel = null
         params = null
