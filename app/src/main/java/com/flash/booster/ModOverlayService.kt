@@ -2,7 +2,6 @@ package com.flash.booster
 
 import android.app.Notification
 import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.graphics.Color
@@ -28,9 +27,11 @@ class ModOverlayService : Service() {
     private var panel: View? = null
     private var params: WindowManager.LayoutParams? = null
 
+    private var collapsed = false
+    private var compact = true
+
     private val cyan = Color.rgb(0, 220, 255)
     private val dark = Color.rgb(19, 25, 42)
-    private val white = Color.WHITE
 
     private val enabled = mutableMapOf(
         "Voice Priority" to false,
@@ -48,10 +49,6 @@ class ModOverlayService : Service() {
         startId: Int
     ): Int {
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(
-                this, "Pehle floating permission ON karo",
-                Toast.LENGTH_LONG
-            ).show()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -83,12 +80,15 @@ class ModOverlayService : Service() {
                 .createNotificationChannel(channel)
         }
 
-        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, channelId)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-        }.setContentTitle("FLASH Booster")
+        }
+
+        val notification = builder
+            .setContentTitle("FLASH Booster")
             .setContentText("Floating panel is running")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
@@ -98,66 +98,115 @@ class ModOverlayService : Service() {
             startForeground(
                 1001,
                 notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                android.content.pm.ServiceInfo
+                    .FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
             startForeground(1001, notification)
         }
     }
 
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
     private fun showPanel() {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        params = WindowManager.LayoutParams(
+            dp(230),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            x = dp(8)
+            y = dp(150)
+        }
+
+        renderPanel()
+    }
+
+    private fun renderPanel() {
+        val p = params ?: return
+
+        panel?.let {
+            try {
+                wm.removeView(it)
+            } catch (_: Exception) {}
+        }
+        panel = null
+
+        if (collapsed) {
+            val bubble = TextView(this).apply {
+                text = "🌙"
+                textSize = 25f
+                gravity = Gravity.CENTER
+                setTextColor(Color.BLACK)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(cyan)
+                    setStroke(dp(2), Color.WHITE)
+                }
+                setOnClickListener {
+                    collapsed = false
+                    renderPanel()
+                }
+            }
+
+            p.width = dp(54)
+            p.height = dp(54)
+
+            panel = bubble
+            wm.addView(bubble, p)
+            return
+        }
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 12, 14, 12)
+            setPadding(dp(8), dp(7), dp(8), dp(7))
             background = GradientDrawable().apply {
                 setColor(dark)
-                cornerRadius = 22f
-                setStroke(2, cyan)
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(2), cyan)
             }
         }
 
         val title = TextView(this).apply {
-            text = "FLASH 🌙 BOOSTER  ⋮"
-            textSize = 17f
+            text = "FLASH 🌙 BOOSTER"
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(cyan)
             gravity = Gravity.CENTER
-            setPadding(4, 8, 4, 14)
+            setPadding(dp(3), dp(8), dp(3), dp(8))
         }
         content.addView(title)
+        makeDraggable(title)
 
-        // Drag the panel by holding its title.
-        title.setOnTouchListener(object : View.OnTouchListener {
-            var startX = 0
-            var startY = 0
-            var touchX = 0f
-            var touchY = 0f
+        addButton(
+            content,
+            "⇤ SIDE HIDE",
+            cyan
+        ) {
+            collapsed = true
+            renderPanel()
+        }
 
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                val p = params ?: return false
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startX = p.x
-                        startY = p.y
-                        touchX = event.rawX
-                        touchY = event.rawY
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        p.x = startX - (event.rawX - touchX).toInt()
-                        p.y = startY + (event.rawY - touchY).toInt()
-                        try {
-                            wm.updateViewLayout(panel, p)
-                        } catch (_: Exception) {}
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> return true
-                }
-                return false
-            }
-        })
+        addButton(
+            content,
+            if (compact) "⤢ RESIZE: SMALL" else "⤡ RESIZE: LARGE",
+            cyan
+        ) {
+            compact = !compact
+            renderPanel()
+        }
 
         addToggle(content, "🔊 Voice Priority", "Voice Priority")
         addToggle(content, "📶 Net Stability", "Net Stability")
@@ -165,15 +214,15 @@ class ModOverlayService : Service() {
         addToggle(content, "↵ Enter = Send", "Enter = Send")
         addToggle(content, "✨ Smooth Mode", "Smooth Mode")
 
-        addButton(content, "🔊 OPEN AUDIO SETTINGS") {
+        addButton(content, "🔊 AUDIO SETTINGS", cyan) {
             openSettings(Settings.ACTION_SOUND_SETTINGS)
         }
 
-        addButton(content, "📶 OPEN NETWORK SETTINGS") {
+        addButton(content, "📶 NETWORK SETTINGS", cyan) {
             openSettings(Settings.ACTION_WIRELESS_SETTINGS)
         }
 
-        addButton(content, "✖ CLOSE PANEL") {
+        addButton(content, "✖ CLOSE PANEL", Color.LTGRAY) {
             stopSelf()
         }
 
@@ -182,34 +231,48 @@ class ModOverlayService : Service() {
             addView(content)
         }
 
-        val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        p.width = dp(if (compact) 230 else 290)
+        p.height = dp(430)
 
-        val p = WindowManager.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.78f).toInt(),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = 12
-            y = 160
-        }
+        panel = scroll
+        wm.addView(scroll, p)
+    }
 
-        try {
-            params = p
-            panel = scroll
-            wm.addView(scroll, p)
-        } catch (e: Exception) {
-            panel = null
-            params = null
-            throw e
-        }
+    private fun makeDraggable(view: View) {
+        view.setOnTouchListener(object : View.OnTouchListener {
+            var startX = 0
+            var startY = 0
+            var touchX = 0f
+            var touchY = 0f
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                val p = params ?: return false
+
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startX = p.x
+                        startY = p.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        return true
+                    }
+
+                    MotionEvent.ACTION_MOVE -> {
+                        p.x = (startX - (event.rawX - touchX)).toInt()
+                        p.y = (startY + (event.rawY - touchY)).toInt()
+
+                        try {
+                            wm.updateViewLayout(panel, p)
+                        } catch (_: Exception) {}
+
+                        return true
+                    }
+
+                    MotionEvent.ACTION_UP -> return true
+                }
+                return true
+            }
+        })
     }
 
     private fun addToggle(
@@ -218,11 +281,11 @@ class ModOverlayService : Service() {
         key: String
     ) {
         val button = Button(this)
-        updateToggleLabel(button, label, key)
+        updateToggle(button, label, key)
 
         button.setOnClickListener {
             enabled[key] = !(enabled[key] ?: false)
-            updateToggleLabel(button, label, key)
+            updateToggle(button, label, key)
 
             Toast.makeText(
                 this,
@@ -235,35 +298,39 @@ class ModOverlayService : Service() {
             button,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 5 }
+                dp(if (compact) 43 else 48)
+            ).apply {
+                bottomMargin = dp(3)
+            }
         )
     }
 
-    private fun updateToggleLabel(
+    private fun updateToggle(
         button: Button,
         label: String,
         key: String
     ) {
-        val isOn = enabled[key] == true
-        button.text = "$label : ${if (isOn) "ON" else "OFF"}"
-        button.textSize = 12f
+        val on = enabled[key] == true
+        button.text = "$label : ${if (on) "ON" else "OFF"}"
+        button.textSize = if (compact) 11f else 13f
         button.isAllCaps = false
         button.setTextColor(Color.BLACK)
-        button.setBackgroundColor(if (isOn) cyan else Color.LTGRAY)
+        button.setBackgroundColor(if (on) cyan else Color.LTGRAY)
     }
 
     private fun addButton(
         parent: LinearLayout,
         label: String,
+        color: Int,
         action: () -> Unit
     ) {
         val button = Button(this).apply {
             text = label
-            textSize = 12f
+            textSize = if (compact) 11f else 13f
             isAllCaps = false
             setTextColor(Color.BLACK)
-            setBackgroundColor(cyan)
+            setBackgroundColor(color)
+            setPadding(dp(3), 0, dp(3), 0)
             setOnClickListener { action() }
         }
 
@@ -271,8 +338,10 @@ class ModOverlayService : Service() {
             button,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 5 }
+                dp(if (compact) 40 else 46)
+            ).apply {
+                bottomMargin = dp(3)
+            }
         )
     }
 
